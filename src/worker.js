@@ -1,5 +1,8 @@
 import { InputError, validateReservation, validateUpdate } from './domain.js';
 import { createSession, validSession, getCookie, safeEqual, digest } from './security.js';
+import { kakaoConfigured, accessToken, sendToSelf } from './kakao.js';
+
+function notificationConfigured(env) { return kakaoConfigured(env) || !!(env.NOTIFICATION_WEBHOOK_URL && env.NOTIFICATION_WEBHOOK_TOKEN); }
 
 const headers = {
   'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
@@ -70,7 +73,7 @@ async function api(request, env, ctx) {
     const page = Math.max(0, Math.min(10000, Number.parseInt(url.searchParams.get('page') || '0', 10) || 0));
     const rows = await env.DB.prepare(`SELECT r.*,j.state AS notification_state,j.attempts AS notification_attempts FROM reservations r
       LEFT JOIN notification_jobs j ON j.reservation_id=r.id ORDER BY r.created_at DESC,r.id DESC LIMIT 51 OFFSET ?`).bind(page * 50).all();
-    return json({ reservations: rows.results.slice(0,50), has_more: rows.results.length > 50, page, notification_configured: !!(env.NOTIFICATION_WEBHOOK_URL && env.NOTIFICATION_WEBHOOK_TOKEN) });
+    return json({ reservations: rows.results.slice(0,50), has_more: rows.results.length > 50, page, notification_configured: notificationConfigured(env), notification_provider: kakaoConfigured(env) ? 'kakao_self' : 'relay' });
   }
   const match = path.match(/^\/api\/admin\/reservations\/([a-f0-9-]{36})$/i);
   if (match && request.method === 'PATCH') {
@@ -80,16 +83,17 @@ async function api(request, env, ctx) {
     return changed ? json({ ok: true }) : json({ error: '다른 담당자가 수정했거나 삭제된 요청입니다. 목록을 새로고침해주세요.' }, 409);
   }
   if (path === '/api/admin/retry' && request.method === 'POST') {
-    if (!env.NOTIFICATION_WEBHOOK_URL || !env.NOTIFICATION_WEBHOOK_TOKEN) return json({ error: '알림 발송 경로가 아직 연결되지 않았습니다.' }, 409);
+    if (!notificationConfigured(env)) return json({ error: '알림 발송 경로가 아직 연결되지 않았습니다.' }, 409);
     await env.DB.prepare("UPDATE notification_jobs SET state='pending', attempts=0, next_at=0 WHERE state='failed'").run();
     ctx.waitUntil(deliverNotifications(env)); return json({ ok: true });
   }
   return json({ error: '찾을 수 없습니다.' }, 404);
 }
 export async function deliverNotifications(env) {
-  if (!env.NOTIFICATION_WEBHOOK_URL || !env.NOTIFICATION_WEBHOOK_TOKEN) return;
-  const target = new URL(env.NOTIFICATION_WEBHOOK_URL);
-  if (target.protocol !== 'https:') return;
+  if (!notificationConfigured(env)) return;
+  const kakao = kakaoConfigured(env);
+  const target = kakao ? null : new URL(env.NOTIFICATION_WEBHOOK_URL);
+  if (target && target.protocol !== 'https:') return;
   const now = Date.now();
   const rows = await env.DB.prepare(`SELECT id,reservation_id FROM notification_jobs
     WHERE ((state='pending' AND next_at<=?) OR (state='sending' AND lease_until<?)) AND attempts<6 LIMIT 10`).bind(now,now).all();
@@ -99,10 +103,14 @@ export async function deliverNotifications(env) {
     if (!claimed) continue;
     try {
       const reservation = await env.DB.prepare('SELECT id,room,start_at,end_at,attendees FROM reservations WHERE id=?').bind(job.reservation_id).first();
+      if (kakao) {
+        await sendToSelf(env, reservation, await accessToken(env));
+      } else {
       const result = await fetch(target, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.NOTIFICATION_WEBHOOK_TOKEN}`, 'Idempotency-Key': job.id },
         body: JSON.stringify({ event: 'reservation.received', reservation }) });
       if (!result.ok) throw new Error('relay');
+      }
       await env.DB.prepare("UPDATE notification_jobs SET state='sent',sent_at=?,last_error='' WHERE id=?").bind(new Date().toISOString(),job.id).run();
     } catch {
       await env.DB.prepare('UPDATE notification_jobs SET state=?,next_at=?,last_error=? WHERE id=?')

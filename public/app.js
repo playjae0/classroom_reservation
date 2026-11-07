@@ -82,7 +82,7 @@ async function load() {
     $('login-form').classList.add('hidden'); $('dashboard').classList.remove('hidden');
     $('reservation-list').replaceChildren(...data.reservations.map(renderCard));
     if (!data.reservations.length) $('reservation-list').append(element('p', '접수된 요청이 없습니다.'));
-    $('notification-warning').textContent = data.notification_configured ? '알림의 발송 상태와 접수 목록을 함께 확인해주세요.' : '알림 발송 경로가 아직 연결되지 않았습니다. 접수는 저장되지만 카카오톡은 발송되지 않습니다.';
+    $('notification-warning').textContent = !data.notification_configured ? '카카오 연동이 아직 연결되지 않았습니다. 접수는 저장되지만 카카오톡은 발송되지 않습니다.' : data.notification_provider === 'kakao_self' ? '본인 나와의 채팅에 접수 내역을 전송합니다. 필요하면 직접 단톡방에 전달해주세요.' : '알림의 발송 상태와 접수 목록을 함께 확인해주세요.';
     hasMore = data.has_more; $('previous').disabled = page === 0; $('next').disabled = !hasMore; $('page-label').textContent = `${page+1} 페이지`;
     message('admin-message', '');
   } catch (error) {

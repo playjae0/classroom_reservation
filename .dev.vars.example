@@ -2,6 +2,12 @@
 ADMIN_PASSWORD=replace-with-a-long-random-password
 SESSION_SECRET=replace-with-at-least-32-random-characters
 REQUEST_CODE=replace-with-student-council-invitation-code
+# Kakao send-to-self; set through wrangler secret put for production.
+# KAKAO_REST_API_KEY=
+# KAKAO_REFRESH_TOKEN=
+# KAKAO_CLIENT_SECRET=
+# TOKEN_ENCRYPTION_KEY=replace-with-an-independent-random-key-at-least-32-characters
+# PUBLIC_APP_URL=https://classroom-reservation.your-account.workers.dev
 # Optional approved notification relay. Leave unset to queue notifications.
 # The relay must accept POST JSON, support Idempotency-Key and return 2xx only on acceptance.
 # NOTIFICATION_WEBHOOK_URL=https://your-approved-relay.example/notify

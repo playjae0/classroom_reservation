@@ -7,6 +7,7 @@ import worker, { deliverNotifications } from '../src/worker.js';
 function database() {
   const db = new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'));
+  db.exec(readFileSync(new URL('../migrations/0002_kakao_tokens.sql', import.meta.url), 'utf8'));
   function prepare(sql, values = []) {
     return {
       bind(...args) { return prepare(sql, args); },

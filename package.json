@@ -8,6 +8,7 @@
     "deploy": "wrangler deploy",
     "db:local": "wrangler d1 migrations apply classroom-reservation --local",
     "db:remote": "wrangler d1 migrations apply classroom-reservation --remote",
+    "kakao:connect": "node scripts/connect-kakao.js",
     "test": "node --test tests/*.test.js",
     "check": "node --check src/worker.js && node --check public/app.js"
   },

@@ -10,7 +10,7 @@
 - 알림 발송 경로 미설정 표시, 재시도 및 발송 임대, 90일 보관 후 삭제
 - Cloudflare Workers + D1 + Static Assets. 별도 도메인 불필요
 
-**카카오톡 발송은 아직 연결되지 않았습니다.** 일반 메시지 API는 사용자 간 소셜 메시지 용도입니다. 본 서비스의 자동 알림에 적합한 알림톡/승인된 경로와 학생회 자격을 먼저 확인해야 합니다. 기존 단톡방 자동 발송은 일반 공식 API에서 지원하지 않습니다. 현재 알림 작업은 DB에 대기하며, `sent`는 연결된 발송 경로가 접수했음을 뜻하고 휴대폰 수신·읽음 보장은 아닙니다.
+**카카오 ‘나에게 보내기’로 본인 나와의 채팅에 접수 요약을 기록합니다.** 필요하면 본인이 단톡방으로 전달합니다. 푸시·소리 알림은 제공하지 않습니다. 실제 계정 연결과 수신 검증은 아직 필요합니다. 설정 전에는 알림 작업이 DB에 대기합니다. `sent`는 카카오 API의 성공 응답을 뜻하며 읽음 확인은 아닙니다.
 
 ## Cloudflare 준비
 
@@ -57,6 +57,32 @@ npm run deploy
 
 ## 알림 경로
 
+### 카카오 나에게 보내기 (기본)
+
+1. 카카오디벨로퍼스에서 본인 앱 생성.
+2. 카카오 로그인 활성화, Redirect URI에 `http://localhost:8788/callback` 등록.
+3. 카카오톡 메시지 전송 `talk_message` 동의항목 설정.
+4. 앱의 웹 도메인에 실제 배포 주소(`https://...workers.dev`) 등록. 콘솔에서 REST API 키의 허용 웹 도메인 등 추가 설정을 요구하면 동일 주소를 등록.
+5. `.dev.vars`에 `KAKAO_REST_API_KEY`, 필요 시 `KAKAO_CLIENT_SECRET`, 독립적인 32자 이상 `TOKEN_ENCRYPTION_KEY`, `PUBLIC_APP_URL` 입력.
+6. `npm run kakao:connect` 실행 후 출력된 로그인 주소를 본인 브라우저에서 열고 동의. 초기 refresh token은 무시된 `.dev.vars`에만 저장되고 출력되지 않음.
+7. 운영 환경은 `wrangler secret put`으로 같은 설정과 `KAKAO_REFRESH_TOKEN`을 직접 입력. 토큰을 채팅이나 GitHub에 붙여넣지 않음.
+
+```powershell
+npx wrangler secret put KAKAO_REST_API_KEY
+npx wrangler secret put KAKAO_CLIENT_SECRET
+npx wrangler secret put KAKAO_REFRESH_TOKEN
+npx wrangler secret put TOKEN_ENCRYPTION_KEY
+npx wrangler secret put PUBLIC_APP_URL
+npm run db:remote
+npm run deploy
+```
+
+Client Secret을 사용하지 않는 앱은 해당 명령을 생략합니다. 인증 정보는 로그인한 본인의 나와의 채팅에만 사용합니다. 액세스 토큰은 자동 갱신하며, 새 refresh token이 응답에 있으면 교체하고 없으면 기존 값을 유지합니다. 갱신 토큰은 별도 키로 AES-GCM 암호화하여 D1에 보관합니다. `TOKEN_ENCRYPTION_KEY`를 바꿀 때는 반드시 새 인증 토큰으로 재연결하고 저장 토큰을 초기화해야 합니다.
+
+연결 철회·장기 미사용·refresh token 만료 등으로 재로그인이 필요할 수 있습니다. 카카오 API는 이 메시지에 대한 중복 방지 키를 지원하지 않으므로, 성공 직후 네트워크가 끊기거나 작업이 중단되면 재시도로 같은 접수번호가 두 번 도착할 수 있습니다. 관리자 목록이 원본이며 접수번호로 구분합니다. 기존 단톡방으로의 자동 전송은 구현하지 않습니다.
+
+### 선택 사항: 외부 발송 경로
+
 승인된 발송 서비스를 확정하면 서버 측 어댑터를 연결합니다. 현재 연동 계약은 HTTPS POST JSON + Bearer 인증 + `Idempotency-Key`입니다. 메시지에는 연락처와 이름을 제외한 접수번호·희망 강의실·일시·인원만 전달합니다. 발송 경로는 같은 키의 중복 발송을 차단해야 합니다.
 
 ```powershell
@@ -74,7 +100,7 @@ npx wrangler secret put NOTIFICATION_WEBHOOK_TOKEN
 - 신청 코드와 관리자 비밀번호는 서로 다르게 설정하고 담당자 교체 시 회전
 - 관리자 공유 비밀번호는 초기 소규모 운영용. 개인별 로그인·감사 기록은 미구현
 - 접수량/알림 실패를 점검. 무료 한도·서비스 장애에 대한 무중단 보장은 없음
-- 카카오 발송 경로 승인 및 실기기 수신 검증 전에는 자동 카카오 알림 제공을 안내하지 않음
+- 본인 계정 연결 및 실기기 수신 검증 전에는 카카오 전송 완료를 안내하지 않음
 
 신청 코드는 원우 확인을 위한 간단한 접근 제한이며 학생 신원 인증은 아닙니다. IP별 제한은 같은 학교 네트워크의 여러 사용자가 공유할 수 있습니다. 신청자용 조회·취소 화면은 현재 범위에 포함하지 않습니다.
 

@@ -50,9 +50,9 @@ function element(tag, text, className) { const node = document.createElement(tag
 function field(label, input) { const node = element('label', label); node.append(input); return node; }
 function renderCard(row) {
   const card = element('article', null, 'panel request-card'), title = element('div', null, 'card-title');
-  title.append(element('h2', `${row.name} · ${row.cohort}`), element('span', labels[row.status], 'badge')); card.append(title);
+  title.append(element('h2', row.name), element('span', labels[row.status], 'badge')); card.append(title);
   const details = element('dl', null, 'details');
-  for (const [label, value] of [['연락처', row.contact], ['희망 공간', row.room], ['사용 시간', `${formatDate(row.start_at)} ~ ${formatDate(row.end_at)}`],
+  for (const [label, value] of [...(row.student_id ? [['학번', row.student_id]] : [['기수 · 학과', row.cohort], ['연락처', row.contact]]), ['희망 공간', row.room], ['사용 시간', `${formatDate(row.start_at)} ~ ${formatDate(row.end_at)}`],
     ['사용 목적', `${row.attendees}명 · ${row.purpose}`], ['접수 일시', formatDate(row.created_at)], ['알림 상태', `${notificationLabels[row.notification_state] || '미확인'} (${row.notification_attempts || 0}회 시도)`], ['접수번호', row.id]]) {
     details.append(element('dt', label), element('dd', value));
   }

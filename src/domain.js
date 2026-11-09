@@ -9,8 +9,7 @@ function text(value, label, max, optional = false) {
 export function validateReservation(body, now = Date.now()) {
   const result = {
     name: text(body.name, '이름', 40),
-    contact: text(body.contact, '연락처', 100),
-    cohort: text(body.cohort, '기수·학과', 60),
+    student_id: text(body.student_id, '학번', 20),
     room: text(body.room, '희망 강의실', 100),
     purpose: text(body.purpose, '사용 목적', 500)
   };

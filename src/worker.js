@@ -74,7 +74,7 @@ async function api(request, env, ctx) {
     ]);
     const saved = await env.DB.prepare('SELECT id FROM reservations WHERE idempotency_key=?').bind(key).first();
     ctx.waitUntil(deliverNotifications(env));
-    return json({ id: saved.id, message: '학생회에 요청이 접수되었습니다. 실제 예약 완료는 담당자가 별도로 안내합니다.' }, 201);
+    return json({ id: saved.id, message: '원우회에 요청이 접수되었습니다. 실제 예약 완료는 담당자가 별도로 안내합니다.' }, 201);
   }
   if (!await validSession(getCookie(request), env.SESSION_SECRET)) return json({ error: '관리자 로그인이 필요합니다.' }, 401);
   if (path === '/api/admin/reservations' && request.method === 'GET') {

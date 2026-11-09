@@ -85,7 +85,7 @@ async function load() {
     hasMore = data.has_more; $('previous').disabled = page === 0; $('next').disabled = !hasMore; $('page-label').textContent = `${page+1} 페이지`;
     message('admin-message', '');
   } catch (error) {
-    if (error.status === 401) { $('dashboard').classList.add('hidden'); $('login-form').classList.remove('hidden'); $('reservation-list').replaceChildren(); message('admin-message', '학생회 관리자만 확인할 수 있습니다.'); }
+    if (error.status === 401) { $('dashboard').classList.add('hidden'); $('login-form').classList.remove('hidden'); $('reservation-list').replaceChildren(); message('admin-message', '원우회 관리자만 확인할 수 있습니다.'); }
     else message('admin-message', error.message, true);
   }
 }

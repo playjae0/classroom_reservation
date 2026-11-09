@@ -69,6 +69,30 @@ test('실제 SQL: 접수 → 중복 방지 → 관리자 변경 → 충돌 → �
     await Promise.all([deliverNotifications(env), deliverNotifications(env)]);
     job = await DB.prepare('SELECT * FROM notification_jobs').first(); assert.equal(job.state, 'sent'); assert.equal(calls, 2);
   } finally { globalThis.fetch = originalFetch; }
+  env.RESEND_API_KEY = 'test-resend-key';
+  env.NOTIFICATION_EMAIL_TO = 'owner@example.com';
+  let emails = 0;
+  try {
+    globalThis.fetch = async (url, options) => {
+      if (url !== 'https://api.resend.com/emails') return new Response('{}');
+      emails++;
+      const email = JSON.parse(options.body);
+      assert.deepEqual(email.to, ['owner@example.com']);
+      assert.match(options.headers['Idempotency-Key'], /^email:/);
+      assert.equal(email.text.includes(draft.name), false);
+      assert.equal(email.text.includes(draft.student_id), false);
+      return Response.json({ id: 'email-test' });
+    };
+    const next = await call('reservations', 'POST', draft, { 'Idempotency-Key': crypto.randomUUID() });
+    assert.equal(next.status, 201);
+    await Promise.all(pending);
+    await deliverNotifications(env);
+    assert.equal(emails, 1);
+    const mailJob = await DB.prepare("SELECT state FROM notification_jobs WHERE id LIKE 'email:%'").first();
+    assert.equal(mailJob.state, 'sent');
+    const list = await (await call('admin/reservations', 'GET', null, { Cookie })).json();
+    assert.equal(list.reservations.length, 2);
+  } finally { globalThis.fetch = originalFetch; }
   await DB.prepare('UPDATE reservations SET created_at=?').bind('2000-01-01T00:00:00.000Z').run();
   await worker.scheduled({}, env, ctx); await Promise.all(pending);
   assert.equal((await DB.prepare('SELECT count(*) AS n FROM reservations').first()).n, 0);

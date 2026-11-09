@@ -1,8 +1,9 @@
+import { emailConfigured, sendReservationEmail } from './email.js';
 import { InputError, validateReservation, validateUpdate } from './domain.js';
 import { createSession, validSession, getCookie, safeEqual, digest } from './security.js';
 import { kakaoConfigured, accessToken, sendToSelf, connectKakao, seal, unseal } from './kakao.js';
 
-async function notificationConfigured(env) { return await kakaoConfigured(env) || !!(env.NOTIFICATION_WEBHOOK_URL && env.NOTIFICATION_WEBHOOK_TOKEN); }
+async function notificationConfigured(env) { return emailConfigured(env) || await kakaoConfigured(env) || !!(env.NOTIFICATION_WEBHOOK_URL && env.NOTIFICATION_WEBHOOK_TOKEN); }
 
 const headers = {
   'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
@@ -64,10 +65,12 @@ async function api(request, env, ctx) {
     if (!key || !/^[a-f0-9-]{36}$/i.test(key)) throw new InputError('접수 식별자가 올바르지 않습니다.');
     const id = crypto.randomUUID(), now = new Date().toISOString();
     // Transactional batch prevents a saved request without its notification job.
+    const jobs = [env.DB.prepare('INSERT INTO notification_jobs(id,reservation_id) SELECT id,id FROM reservations WHERE idempotency_key=? ON CONFLICT(id) DO NOTHING').bind(key)];
+    if (emailConfigured(env)) jobs.push(env.DB.prepare("INSERT INTO notification_jobs(id,reservation_id) SELECT 'email:' || id,id FROM reservations WHERE idempotency_key=? ON CONFLICT(id) DO NOTHING").bind(key));
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO reservations(id,idempotency_key,name,student_id,contact,cohort,room,start_at,end_at,attendees,purpose,created_at,updated_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING`).bind(id,key,data.name,data.student_id,'','',data.room,data.start_at,data.end_at,data.attendees,data.purpose,now,now),
-      env.DB.prepare('INSERT INTO notification_jobs(id,reservation_id) SELECT id,id FROM reservations WHERE idempotency_key=? ON CONFLICT(id) DO NOTHING').bind(key)
+      ...jobs
     ]);
     const saved = await env.DB.prepare('SELECT id FROM reservations WHERE idempotency_key=?').bind(key).first();
     ctx.waitUntil(deliverNotifications(env));
@@ -77,8 +80,8 @@ async function api(request, env, ctx) {
   if (path === '/api/admin/reservations' && request.method === 'GET') {
     const page = Math.max(0, Math.min(10000, Number.parseInt(url.searchParams.get('page') || '0', 10) || 0));
     const rows = await env.DB.prepare(`SELECT r.*,j.state AS notification_state,j.attempts AS notification_attempts FROM reservations r
-      LEFT JOIN notification_jobs j ON j.reservation_id=r.id ORDER BY r.created_at DESC,r.id DESC LIMIT 51 OFFSET ?`).bind(page * 50).all();
-    return json({ reservations: rows.results.slice(0,50), has_more: rows.results.length > 50, page, notification_configured: await notificationConfigured(env), notification_provider: await kakaoConfigured(env) ? 'kakao_self' : 'relay' });
+      LEFT JOIN notification_jobs j ON j.id=r.id ORDER BY r.created_at DESC,r.id DESC LIMIT 51 OFFSET ?`).bind(page * 50).all();
+    return json({ reservations: rows.results.slice(0,50), has_more: rows.results.length > 50, page, notification_configured: await notificationConfigured(env), notification_provider: await kakaoConfigured(env) ? 'kakao_self' : emailConfigured(env) ? 'email' : 'relay' });
   }
   const match = path.match(/^\/api\/admin\/reservations\/([a-f0-9-]{36})$/i);
   if (match && request.method === 'PATCH') {
@@ -188,19 +191,26 @@ async function kakaoSetup(request, env, url) {
 
 export async function deliverNotifications(env) {
   const kakao = await kakaoConfigured(env);
-  if (!kakao && !(env.NOTIFICATION_WEBHOOK_URL && env.NOTIFICATION_WEBHOOK_TOKEN)) return;
-  const target = kakao ? null : new URL(env.NOTIFICATION_WEBHOOK_URL);
-  if (target && target.protocol !== 'https:') return;
+  const email = emailConfigured(env);
+  const relay = !kakao && env.NOTIFICATION_WEBHOOK_URL && env.NOTIFICATION_WEBHOOK_TOKEN;
+  const target = relay ? URL.parse(env.NOTIFICATION_WEBHOOK_URL) : null;
+  const originalChannel = kakao || target?.protocol === 'https:';
+  if (!originalChannel && !email) return;
   const now = Date.now();
   const rows = await env.DB.prepare(`SELECT id,reservation_id FROM notification_jobs
-    WHERE ((state='pending' AND next_at<=?) OR (state='sending' AND lease_until<?)) AND attempts<6 LIMIT 10`).bind(now,now).all();
+    WHERE ((state='pending' AND next_at<=?) OR (state='sending' AND lease_until<?)) AND attempts<6
+      AND ((id=reservation_id AND ?=1) OR (id='email:' || reservation_id AND ?=1))
+      ORDER BY next_at,id LIMIT 10`).bind(now,now,Number(originalChannel),Number(email)).all();
   for (const job of rows.results) {
     const claimed = await env.DB.prepare(`UPDATE notification_jobs SET state='sending',attempts=attempts+1,lease_until=?
       WHERE id=? AND ((state='pending' AND next_at<=?) OR (state='sending' AND lease_until<?)) RETURNING attempts`).bind(now+60000,job.id,now,now).first();
     if (!claimed) continue;
     try {
-      const reservation = await env.DB.prepare(kakao ? 'SELECT id,name,student_id,room,start_at,end_at,attendees,purpose FROM reservations WHERE id=?' : 'SELECT id,room,start_at,end_at,attendees FROM reservations WHERE id=?').bind(job.reservation_id).first();
-      if (kakao) {
+      const emailJob = job.id.startsWith('email:');
+      const reservation = await env.DB.prepare(kakao && !emailJob ? 'SELECT id,name,student_id,room,start_at,end_at,attendees,purpose FROM reservations WHERE id=?' : 'SELECT id,room,start_at,end_at,attendees FROM reservations WHERE id=?').bind(job.reservation_id).first();
+      if (emailJob) {
+        await sendReservationEmail(env, reservation, job.id);
+      } else if (kakao) {
         await sendToSelf(env, reservation, await accessToken(env));
       } else {
       const result = await fetch(target, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000),

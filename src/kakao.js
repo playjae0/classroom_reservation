@@ -40,7 +40,7 @@ async function refreshOrCachedToken(env) {
   if (!refresh) throw new Error('카카오 계정을 연결해주세요.');
   const body = new URLSearchParams({ grant_type: 'refresh_token', client_id: env.KAKAO_REST_API_KEY, refresh_token: refresh });
   if (env.KAKAO_CLIENT_SECRET) body.set('client_secret', env.KAKAO_CLIENT_SECRET);
-  const response = await fetch('https://kauth.kakao.com/oauth/token', { method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(10000) });
+  const response = await fetch('https://kauth.kakao.com/oauth/token', { method: 'POST', body, redirect: 'manual', signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error('카카오 인증을 다시 연결해야 합니다.');
   const token = await response.json();
   if (!token.access_token || !Number.isFinite(token.expires_in)) throw new Error('카카오 인증 응답 오류');
@@ -68,7 +68,7 @@ export async function connectKakao(env, code, redirectUri) {
   try { await withTokenLock(env, async () => {
     stage = 'network';
     const response = await fetch('https://kauth.kakao.com/oauth/token', {
-      method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(10000),
+      method: 'POST', body, redirect: 'manual', signal: AbortSignal.timeout(10000),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' }
     });
     stage = 'response';
@@ -116,7 +116,7 @@ export function selfMessage(reservation, appUrl) {
 }
 export async function sendToSelf(env, reservation, token) {
   const response = await fetch('https://kapi.kakao.com/v2/api/talk/memo/default/send', {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
+    method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000),
     headers: { Authorization: `Bearer ${token}` },
     body: new URLSearchParams({ template_object: JSON.stringify(selfMessage(reservation, env.PUBLIC_APP_URL)) })
   });

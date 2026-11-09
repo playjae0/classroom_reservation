@@ -203,7 +203,7 @@ export async function deliverNotifications(env) {
       if (kakao) {
         await sendToSelf(env, reservation, await accessToken(env));
       } else {
-      const result = await fetch(target, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
+      const result = await fetch(target, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000),
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.NOTIFICATION_WEBHOOK_TOKEN}`, 'Idempotency-Key': job.id },
         body: JSON.stringify({ event: 'reservation.received', reservation }) });
       if (!result.ok) throw new Error('relay');

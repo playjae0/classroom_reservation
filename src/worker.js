@@ -122,7 +122,13 @@ async function kakaoSetup(request, env, url) {
   const redirectUri = url.origin + callbackPath;
   if (url.pathname === setupPath && request.method === 'GET') {
     if (url.searchParams.get('result') === 'connected') return kakaoPage('카카오 계정 연결 완료. 새 테스트 신청으로 나와의 채팅을 확인해주세요.');
-    if (url.searchParams.get('result') === 'failed') return kakaoPage('카카오 연결에 실패했습니다. 로그인 설정과 동의를 확인하고 다시 시도해주세요.');
+    if (url.searchParams.get('result') === 'failed') {
+      const reason = url.searchParams.get('reason');
+      if (reason === 'state') return kakaoPage('로그인 세션을 확인할 수 없습니다. 같은 Chrome 탭에서 설정 코드 확인부터 다시 진행해주세요.');
+      if (reason === 'consent') return kakaoPage('카카오가 로그인 또는 메시지 전송 동의를 완료하지 않았습니다. 동의 화면에서 카카오톡 메시지 전송을 선택해주세요.');
+      if (reason === 'token') return kakaoPage('카카오 토큰 발급 또는 저장 단계에서 연결에 실패했습니다. REST API 키와 같은 키의 클라이언트 시크릿을 확인해주세요.');
+      return kakaoPage('카카오 연결에 실패했습니다. 연결 화면에서 다시 시도해주세요.');
+    }
     return kakaoPage('설정 코드를 입력하고, 신청 메시지를 받을 본인 카카오 계정으로 로그인해주세요.', { form: true });
   }
   if (url.pathname === setupPath && request.method === 'POST') {
@@ -140,16 +146,20 @@ async function kakaoSetup(request, env, url) {
     });
   }
   if (url.pathname === callbackPath && request.method === 'GET') {
+    let reason = 'state';
     try {
       const raw = request.headers.get('Cookie')?.split(';').map(value => value.trim())
         .find(value => value.startsWith(stateCookie + '='))?.slice(stateCookie.length + 1);
       const saved = raw && await unseal(raw, stateKey);
       const code = url.searchParams.get('code');
-      if (!saved || saved.expires <= Date.now() || !code || !await safeEqual(saved.state, url.searchParams.get('state'))) throw new Error('Invalid OAuth state');
+      if (!saved || saved.expires <= Date.now() || !await safeEqual(saved.state, url.searchParams.get('state'))) throw new Error('Invalid OAuth state');
+      reason = 'consent';
+      if (!code || url.searchParams.has('error')) throw new Error('Missing authorization code');
+      reason = 'token';
       await connectKakao(env, code, redirectUri);
       return redirectTo(setupPath + '?result=connected', stateHeader('', 0));
     } catch {
-      return redirectTo(setupPath + '?result=failed', stateHeader('', 0));
+      return redirectTo(setupPath + '?result=failed&reason=' + reason, stateHeader('', 0));
     }
   }
   return kakaoPage('허용하지 않는 요청입니다.', { status: 405 });

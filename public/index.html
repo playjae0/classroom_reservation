@@ -9,7 +9,7 @@
 <label>사용 인원<input name="attendees" type="number" min="1" max="300" required placeholder="명"></label>
 <label>사용 목적<textarea name="purpose" maxlength="500" rows="3" required placeholder="예: 기술경영 수업 팀 프로젝트 회의"></textarea></label>
 <label class="trap" aria-hidden="true">웹사이트<input name="website" tabindex="-1" autocomplete="off"></label>
-<div class="privacy"><strong>개인정보 수집·이용 안내</strong><p>학생회는 강의실 예약 처리와 원우 확인을 위해 이름, 학번, 신청 내용을 수집합니다. 학생회 담당자만 확인하며 접수일로부터 90일 후 삭제합니다. 동의를 거부할 수 있으나 온라인 신청은 제한됩니다. 문의는 학생회 담당자에게 해주세요.</p><label class="check"><input name="consent" type="checkbox" required> 위 개인정보 수집·이용에 동의합니다.</label></div>
+<div class="privacy"><strong>개인정보 수집·이용 안내</strong><p>학생회는 강의실 예약 처리와 원우 확인을 위해 이름, 학번, 신청 내용을 수집합니다. 학생회 담당자가 확인하며, 접수 요약(이름·학번 포함)은 담당자의 카카오톡으로 전달됩니다. 접수 기록은 접수일로부터 90일 후 삭제합니다. 동의를 거부할 수 있으나 온라인 신청은 제한됩니다. 문의는 학생회 담당자에게 해주세요.</p><label class="check"><input name="consent" type="checkbox" required> 위 개인정보 수집·이용에 동의합니다.</label></div>
 <button class="primary" type="submit">예약 요청 접수하기 <span>↗</span></button><p id="request-message" role="status" aria-live="polite"></p></form>
 <section id="receipt" class="panel hidden" tabindex="-1"><span class="eyebrow">REQUEST RECEIVED</span><h2>요청을 접수했습니다.</h2><p>예약 확정은 담당자의 별도 안내를 확인해주세요.</p><p>접수번호 <code id="receipt-id"></code></p><button id="new-request" class="primary">새 요청 작성</button></section></section>
 <section id="admin-view" class="hidden"><div class="admin-heading"><div><span class="eyebrow">STUDENT COUNCIL</span><h1>예약 요청 관리</h1></div><button id="back" class="quiet">신청 화면으로</button></div>

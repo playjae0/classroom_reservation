@@ -10,8 +10,10 @@ test('카카오 토큰은 암호화하며 다른 키로 읽을 수 없다', asyn
   await assert.rejects(unseal(value, 'b'.repeat(32)));
 });
 test('나에게 보내는 메시지는 관리자 링크와 접수 요약만 포함한다', () => {
-  const message = selfMessage({ id: 'test-id', room: '회의실', attendees: 5, start_at: '2026-11-08T01:00:00Z', end_at: '2026-11-08T02:00:00Z', name: '비공개이름', contact: '비공개전화' }, 'https://example.com');
-  assert.equal(message.text.includes('비공개'), false);
+  const message = selfMessage({ id: 'test-id', room: '회의실', attendees: 5, start_at: '2026-11-08T01:00:00Z', end_at: '2026-11-08T02:00:00Z', name: '가상원우', student_id: '20260001', contact: '비공개전화' }, 'https://example.com');
+  assert.match(message.text, /가상원우.*20260001/);
+  assert.equal(message.text.includes('비공개전화'), false);
+  assert.ok(message.text.length <= 200);
   assert.equal(message.link.web_url, 'https://example.com');
   assert.throws(() => selfMessage({}, 'http://example.com'));
 });

@@ -26,7 +26,7 @@ function database() {
 
 test('실제 SQL: 접수 → 중복 방지 → 관리자 변경 → 충돌 → 알림 실패/재시도 → 보관 만료 삭제', async () => {
   const DB = database(), pending = [];
-  const env = { DB, ADMIN_PASSWORD: 'admin-password-for-test', SESSION_SECRET: 's'.repeat(32) };
+  const env = { DB };
   const ctx = { waitUntil(promise) { pending.push(promise); } };
   async function call(path, method = 'GET', data, extra = {}) {
     return worker.fetch(new Request(`https://example.com/api/${path}`, { method,
@@ -41,6 +41,8 @@ test('실제 SQL: 접수 → 중복 방지 → 관리자 변경 → 충돌 → �
   assert.equal((await (await call('reservations', 'POST', draft, { 'Idempotency-Key': key })).json()).id, saved.id);
   assert.equal((await DB.prepare('SELECT count(*) AS n FROM reservations').first()).n, 1);
   assert.equal((await DB.prepare('SELECT count(*) AS n FROM notification_jobs').first()).n, 1);
+  assert.equal((await call('admin/reservations')).status, 503);
+  env.ADMIN_PASSWORD = 'admin-password-for-test'; env.SESSION_SECRET = 's'.repeat(32);
   assert.equal((await call('admin/reservations')).status, 401);
   const login = await call('login', 'POST', { password: env.ADMIN_PASSWORD });
   assert.equal(login.status, 200); const Cookie = login.headers.get('Set-Cookie').split(';')[0];

@@ -54,7 +54,18 @@ export function selfMessage(reservation, appUrl) {
   const url = new URL(appUrl);
   if (url.protocol !== 'https:' || url.username || url.password) throw new Error('운영 HTTPS 주소를 설정해주세요.');
   const time = value => new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
-  return { object_type: 'text', text: `[학생회 강의실 예약 요청]\n희망 공간: ${reservation.room}\n시간: ${time(reservation.start_at)} ~ ${time(reservation.end_at)}\n인원: ${reservation.attendees}명\n접수번호: ${reservation.id}\n신청자·연락처는 관리자 화면에서 확인해주세요.`,
+  const shorten = (value, max) => {
+    const line = String(value ?? '').replace(/\s+/g, ' ').trim();
+    return line.length > max ? line.slice(0, max - 1) + '…' : line;
+  };
+  const details = [
+    '[강의실 예약 요청]',
+    `이름: ${shorten(reservation.name, 40)} · 학번: ${shorten(reservation.student_id || '-', 20)}`,
+    `${time(reservation.start_at)} ~ ${time(reservation.end_at)}`,
+    `${shorten(reservation.room, 24)} · ${reservation.attendees}명`
+  ].join('\n');
+  const text = reservation.purpose ? details + '\n목적: ' + shorten(reservation.purpose, 195 - details.length) : details;
+  return { object_type: 'text', text,
     link: { web_url: url.origin, mobile_web_url: url.origin }, button_title: '접수 내역 확인' };
 }
 export async function sendToSelf(env, reservation, token) {

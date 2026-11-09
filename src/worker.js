@@ -31,15 +31,17 @@ async function bodyOf(request) {
 async function limit(request, env, kind, max) {
   const now = Date.now(), window = Math.floor(now / 900000);
   const ip = request.headers.get('CF-Connecting-IP') || 'local';
-  const bucket = await digest(`${env.SESSION_SECRET}:${ip}:${kind}:${window}`);
+  const bucket = await digest(`${env.SESSION_SECRET || 'classroom-reservation'}:${ip}:${kind}:${window}`);
   const row = await env.DB.prepare('INSERT INTO rate_limits(bucket,count,expires_at) VALUES (?,1,?) ON CONFLICT(bucket) DO UPDATE SET count=count+1 RETURNING count')
     .bind(bucket, (window + 1) * 900000).first();
   return row.count <= max;
 }
-function configured(env) { return env.DB && env.ADMIN_PASSWORD?.length >= 16 && env.SESSION_SECRET?.length >= 32; }
+function adminConfigured(env) { return env.ADMIN_PASSWORD?.length >= 16 && env.SESSION_SECRET?.length >= 32; }
 async function api(request, env, ctx) {
-  if (!configured(env)) return json({ error: '운영 설정이 준비되지 않았습니다.' }, 503);
+  if (!env.DB) return json({ error: '운영 설정이 준비되지 않았습니다.' }, 503);
   const url = new URL(request.url), path = url.pathname;
+  const publicSubmission = path === '/api/reservations' && request.method === 'POST';
+  if (!publicSubmission && !adminConfigured(env)) return json({ error: '관리자 설정이 준비되지 않았습니다.' }, 503);
   if (!['GET', 'POST', 'PATCH'].includes(request.method)) return json({ error: '허용하지 않는 요청입니다.' }, 405);
   if (request.method !== 'GET' && request.headers.get('Origin') !== url.origin) return json({ error: '접근할 수 없습니다.' }, 403);
   if (path === '/api/login' && request.method === 'POST') {
@@ -101,7 +103,7 @@ export async function deliverNotifications(env) {
       WHERE id=? AND ((state='pending' AND next_at<=?) OR (state='sending' AND lease_until<?)) RETURNING attempts`).bind(now+60000,job.id,now,now).first();
     if (!claimed) continue;
     try {
-      const reservation = await env.DB.prepare('SELECT id,room,start_at,end_at,attendees FROM reservations WHERE id=?').bind(job.reservation_id).first();
+      const reservation = await env.DB.prepare(kakao ? 'SELECT id,name,student_id,room,start_at,end_at,attendees,purpose FROM reservations WHERE id=?' : 'SELECT id,room,start_at,end_at,attendees FROM reservations WHERE id=?').bind(job.reservation_id).first();
       if (kakao) {
         await sendToSelf(env, reservation, await accessToken(env));
       } else {

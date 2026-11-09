@@ -1,7 +1,6 @@
 # Copy to .dev.vars for local use only. Never commit real values.
 ADMIN_PASSWORD=replace-with-a-long-random-password
 SESSION_SECRET=replace-with-at-least-32-random-characters
-REQUEST_CODE=replace-with-student-council-invitation-code
 # Kakao send-to-self; set through wrangler secret put for production.
 # KAKAO_REST_API_KEY=
 # KAKAO_REFRESH_TOKEN=

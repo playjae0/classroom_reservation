@@ -36,7 +36,7 @@ async function limit(request, env, kind, max) {
     .bind(bucket, (window + 1) * 900000).first();
   return row.count <= max;
 }
-function configured(env) { return env.DB && env.ADMIN_PASSWORD?.length >= 16 && env.SESSION_SECRET?.length >= 32 && env.REQUEST_CODE?.length >= 8; }
+function configured(env) { return env.DB && env.ADMIN_PASSWORD?.length >= 16 && env.SESSION_SECRET?.length >= 32; }
 async function api(request, env, ctx) {
   if (!configured(env)) return json({ error: '운영 설정이 준비되지 않았습니다.' }, 503);
   const url = new URL(request.url), path = url.pathname;
@@ -53,15 +53,14 @@ async function api(request, env, ctx) {
   if (path === '/api/reservations' && request.method === 'POST') {
     if (!await limit(request, env, 'submit', 15)) return json({ error: '접수 횟수를 초과했습니다. 잠시 후 시도해주세요.' }, 429);
     const body = await bodyOf(request);
-    if (!await safeEqual(body.request_code, env.REQUEST_CODE)) return json({ error: '학생회에서 안내받은 신청 코드를 확인해주세요.' }, 403);
     const data = validateReservation(body);
     const key = request.headers.get('Idempotency-Key');
     if (!key || !/^[a-f0-9-]{36}$/i.test(key)) throw new InputError('접수 식별자가 올바르지 않습니다.');
     const id = crypto.randomUUID(), now = new Date().toISOString();
     // Transactional batch prevents a saved request without its notification job.
     await env.DB.batch([
-      env.DB.prepare(`INSERT INTO reservations(id,idempotency_key,name,contact,cohort,room,start_at,end_at,attendees,purpose,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING`).bind(id,key,data.name,data.contact,data.cohort,data.room,data.start_at,data.end_at,data.attendees,data.purpose,now,now),
+      env.DB.prepare(`INSERT INTO reservations(id,idempotency_key,name,student_id,contact,cohort,room,start_at,end_at,attendees,purpose,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING`).bind(id,key,data.name,data.student_id,'','',data.room,data.start_at,data.end_at,data.attendees,data.purpose,now,now),
       env.DB.prepare('INSERT INTO notification_jobs(id,reservation_id) SELECT id,id FROM reservations WHERE idempotency_key=? ON CONFLICT(id) DO NOTHING').bind(key)
     ]);
     const saved = await env.DB.prepare('SELECT id FROM reservations WHERE idempotency_key=?').bind(key).first();

@@ -4,7 +4,7 @@ import { validateReservation, validateUpdate } from '../src/domain.js';
 import { createSession, validSession } from '../src/security.js';
 import worker from '../src/worker.js';
 const now = Date.parse('2026-11-07T00:00:00Z');
-const valid = { name: '테스트', contact: 'test@example.com', cohort: 'MOT', room: '회의실', purpose: '팀 회의', attendees: 5,
+const valid = { name: '테스트', student_id: '20260001', room: '회의실', purpose: '팀 회의', attendees: 5,
   start_at: '2026-11-08T10:00:00+09:00', end_at: '2026-11-08T12:00:00+09:00', consent: true };
 test('한국 시간 입력을 UTC로 저장한다', () => assert.equal(validateReservation(valid, now).start_at, '2026-11-08T01:00:00.000Z'));
 test('역전 시간, 과거, 초과 인원, 미동의, 과도한 길이를 거절한다', () => {
@@ -24,7 +24,7 @@ test('서명 위조, 만료, 다른 비밀키의 관리자 세션을 거절한�
   assert.equal(await validSession(token, 'other-secret', now), false);
   assert.equal(await validSession(token, 'test-secret', now+8*3600000), false);
 });
-const env = { DB: {}, ADMIN_PASSWORD: 'x'.repeat(20), SESSION_SECRET: 's'.repeat(32), REQUEST_CODE: 'invite-code' };
+const env = { DB: {}, ADMIN_PASSWORD: 'x'.repeat(20), SESSION_SECRET: 's'.repeat(32) };
 test('외부 사이트의 상태 변경 요청을 차단한다', async () => {
   const result = await worker.fetch(new Request('https://example.com/api/login', { method: 'POST', headers: { Origin: 'https://evil.example' } }), env, {});
   assert.equal(result.status, 403);

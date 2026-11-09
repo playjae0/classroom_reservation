@@ -7,7 +7,7 @@
   "d1_databases": [{
     "binding": "DB",
     "database_name": "classroom-reservation",
-    "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+    "database_id": "7d8b5245-6194-4ec3-a572-86d066cc256f",
     "migrations_dir": "migrations"
   }],
   "triggers": { "crons": ["*/5 * * * *"] },

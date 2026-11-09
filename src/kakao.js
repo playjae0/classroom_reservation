@@ -66,18 +66,28 @@ export async function connectKakao(env, code, redirectUri) {
   if (env.KAKAO_CLIENT_SECRET) body.set('client_secret', env.KAKAO_CLIENT_SECRET);
   let stage = 'storage';
   try { await withTokenLock(env, async () => {
-    stage = 'token';
+    stage = 'network';
     const response = await fetch('https://kauth.kakao.com/oauth/token', {
-      method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(10000)
+      method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(10000),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' }
     });
+    stage = 'response';
     const token = await response.json();
     if (!response.ok) {
+      stage = 'token';
       const error = new Error('카카오 토큰 발급 실패');
       error.kakaoCode = token.error_code;
+      error.kakaoStatus = response.status;
       throw error;
     }
-    if (!token.access_token || !token.refresh_token || !Number.isFinite(token.expires_in) ||
-        (token.scope && !token.scope.split(/\s+/).includes('talk_message'))) throw new Error('카카오 메시지 권한이 필요합니다.');
+    if (!token.access_token || !token.refresh_token || !Number.isFinite(token.expires_in)) {
+      stage = 'fields';
+      throw new Error('토큰 응답 필드 누락');
+    }
+    if (token.scope && !token.scope.split(/\s+/).includes('talk_message')) {
+      stage = 'scope';
+      throw new Error('카카오 메시지 권한이 필요합니다.');
+    }
     stage = 'storage';
     await saveToken(env, { access_token: token.access_token, refresh_token: token.refresh_token,
       expires_at: Date.now() + token.expires_in * 1000, connected: true });

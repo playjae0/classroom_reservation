@@ -131,10 +131,14 @@ async function kakaoSetup(request, env, url) {
       if (reason === 'state') return kakaoPage('로그인 세션을 확인할 수 없습니다. 같은 Chrome 탭에서 설정 코드 확인부터 다시 진행해주세요.');
       if (reason === 'consent') return kakaoPage('카카오가 로그인 또는 메시지 전송 동의를 완료하지 않았습니다. 동의 화면에서 카카오톡 메시지 전송을 선택해주세요.');
       if (reason === 'storage') return kakaoPage('Cloudflare D1에 카카오 토큰을 저장하지 못했습니다.');
+      if (reason === 'scope') return kakaoPage('카카오 로그인은 됐지만 카카오톡 메시지 전송 동의가 없습니다. 동의 화면에서 해당 항목을 체크해주세요.');
+      if (reason === 'network') return kakaoPage('Cloudflare에서 카카오 토큰 서버에 접속하지 못했습니다.');
+      if (reason === 'response' || reason === 'fields') return kakaoPage('카카오 토큰 서버 응답에 필요한 정보가 없습니다. 진단: ' + reason);
       if (reason === 'token') {
         const code = url.searchParams.get('code');
         const detail = code && /^KOE[0-9]{3}$/.test(code) ? ' 오류 코드: ' + code + '.' : '';
-        return kakaoPage('카카오 토큰 발급에 실패했습니다.' + detail);
+        const status = url.searchParams.get('http');
+        return kakaoPage('카카오 토큰 발급 요청이 거절됐습니다.' + detail + (/^[45][0-9]{2}$/.test(status || '') ? ' HTTP ' + status : ''));
       }
       return kakaoPage('카카오 연결에 실패했습니다. 연결 화면에서 다시 시도해주세요.');
     }
@@ -174,9 +178,9 @@ async function kakaoSetup(request, env, url) {
       await connectKakao(env, code, redirectUri);
       return redirectTo(setupPath + '?result=connected', stateHeader('', 0));
     } catch (error) {
-      const stage = reason === 'token' && error.kakaoStage === 'storage' ? 'storage' : reason;
+      const stage = reason === 'token' && ['storage', 'network', 'response', 'fields', 'scope'].includes(error.kakaoStage) ? error.kakaoStage : reason;
       const detail = /^KOE[0-9]{3}$/.test(error.kakaoCode || '') ? '&code=' + error.kakaoCode : '';
-      return redirectTo(setupPath + '?result=failed&reason=' + stage + detail, stateHeader('', 0));
+      return redirectTo(setupPath + '?result=failed&reason=' + stage + detail + (Number.isInteger(error.kakaoStatus) ? '&http=' + error.kakaoStatus : ''), stateHeader('', 0));
     }
   }
   return kakaoPage('허용하지 않는 요청입니다.', { status: 405 });

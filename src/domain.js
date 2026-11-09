@@ -10,12 +10,15 @@ export function validateReservation(body, now = Date.now()) {
   const result = {
     name: text(body.name, '이름', 40),
     student_id: text(body.student_id, '학번', 20),
-    room: text(body.room, '희망 강의실', 100),
+    room: body.building !== undefined || body.room_number !== undefined
+      ? `${text(body.building, '건물', 35)} / ${text(body.room_number, '호실', 15)}`
+      : text(body.room, '희망 강의실', 100),
     purpose: text(body.purpose, '사용 목적', 500)
   };
   if (body.consent !== true) throw new InputError('개인정보 수집·이용에 동의해주세요.');
   if (body.website) throw new InputError('요청을 처리할 수 없습니다.');
-  if (!Number.isInteger(body.attendees) || body.attendees < 1 || body.attendees > 300) {
+  const attendees = body.attendees === undefined ? 1 : body.attendees;
+  if (!Number.isInteger(attendees) || attendees < 1 || attendees > 300) {
     throw new InputError('인원은 1~300명으로 입력해주세요.');
   }
   const start = Date.parse(body.start_at), end = Date.parse(body.end_at);
@@ -23,7 +26,7 @@ export function validateReservation(body, now = Date.now()) {
       start > now + 180 * 86400000 || end <= start || end - start > 12 * 3600000) {
     throw new InputError('일시는 미래 180일 이내, 사용 시간은 최대 12시간으로 입력해주세요.');
   }
-  return { ...result, attendees: body.attendees, start_at: new Date(start).toISOString(), end_at: new Date(end).toISOString() };
+  return { ...result, attendees, start_at: new Date(start).toISOString(), end_at: new Date(end).toISOString() };
 }
 export function validateUpdate(body) {
   if (!STATUSES.includes(body.status)) throw new InputError('올바른 처리 상태를 선택해주세요.');

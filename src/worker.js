@@ -207,7 +207,7 @@ export async function deliverNotifications(env) {
     if (!claimed) continue;
     try {
       const emailJob = job.id.startsWith('email:');
-      const reservation = await env.DB.prepare(kakao && !emailJob ? 'SELECT id,name,student_id,room,start_at,end_at,attendees,purpose FROM reservations WHERE id=?' : 'SELECT id,room,start_at,end_at,attendees FROM reservations WHERE id=?').bind(job.reservation_id).first();
+      const reservation = await env.DB.prepare((kakao || emailJob) ? 'SELECT id,name,student_id,room,start_at,end_at,attendees,purpose FROM reservations WHERE id=?' : 'SELECT id,room,start_at,end_at,attendees FROM reservations WHERE id=?').bind(job.reservation_id).first();
       if (emailJob) {
         await sendReservationEmail(env, reservation, job.id);
       } else if (kakao) {

@@ -108,9 +108,9 @@ export function selfMessage(reservation, appUrl) {
     '[강의실 예약 요청]',
     `이름: ${shorten(reservation.name, 40)} · 학번: ${shorten(reservation.student_id || '-', 20)}`,
     `${time(reservation.start_at)} ~ ${time(reservation.end_at)}`,
-    `${shorten(reservation.room, 24)} · ${reservation.attendees}명`
+    `장소: ${shorten(reservation.room, 53)}`
   ].join('\n');
-  const text = reservation.purpose ? details + '\n목적: ' + shorten(reservation.purpose, 195 - details.length) : details;
+  const text = reservation.purpose ? details + '\n목적: ' + shorten(reservation.purpose, Math.max(1, 195 - details.length)) : details;
   return { object_type: 'text', text,
     link: { web_url: url.origin, mobile_web_url: url.origin }, button_title: '접수 내역 확인' };
 }

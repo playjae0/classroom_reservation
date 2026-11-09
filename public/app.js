@@ -9,15 +9,14 @@ async function api(path, options = {}) {
   if (!response.ok) { const error = new Error(body.error || '요청에 실패했습니다.'); error.status = response.status; throw error; }
   return body;
 }
-function localToISO(value) { return new Date(`${value}:00+09:00`).toISOString(); }
 function formatDate(value) { return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)); }
 $('request-form').addEventListener('input', () => { if (!submitting) idempotencyKey = crypto.randomUUID(); });
 $('request-form').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget, button = form.querySelector('button[type=submit]');
   const fields = Object.fromEntries(new FormData(form));
-  const body = { ...fields, attendees: Number(fields.attendees), consent: form.elements.consent.checked,
-    start_at: localToISO(fields.start_at), end_at: localToISO(fields.end_at) };
+  const body = { ...fields, consent: form.elements.consent.checked,
+    start_at: `${fields.date}T${fields.start_time}:00+09:00`, end_at: `${fields.date}T${fields.end_time}:00+09:00` };
   submitting = true; button.disabled = true;
   message('request-message', '접수하고 있습니다…');
   try {
@@ -53,7 +52,7 @@ function renderCard(row) {
   title.append(element('h2', row.name), element('span', labels[row.status], 'badge')); card.append(title);
   const details = element('dl', null, 'details');
   for (const [label, value] of [...(row.student_id ? [['학번', row.student_id]] : [['기수 · 학과', row.cohort], ['연락처', row.contact]]), ['희망 공간', row.room], ['사용 시간', `${formatDate(row.start_at)} ~ ${formatDate(row.end_at)}`],
-    ['사용 목적', `${row.attendees}명 · ${row.purpose}`], ['접수 일시', formatDate(row.created_at)], ['알림 상태', `${notificationLabels[row.notification_state] || '미확인'} (${row.notification_attempts || 0}회 시도)`], ['접수번호', row.id]]) {
+    ['신청 사유', row.purpose], ['접수 일시', formatDate(row.created_at)], ['알림 상태', `${notificationLabels[row.notification_state] || '미확인'} (${row.notification_attempts || 0}회 시도)`], ['접수번호', row.id]]) {
     details.append(element('dt', label), element('dd', value));
   }
   card.append(details);

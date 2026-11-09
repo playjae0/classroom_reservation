@@ -8,11 +8,12 @@ export async function sendReservationEmail(env, reservation, jobId) {
   }).format(new Date(value));
   const text = [
     '강의실 예약 요청이 접수되었습니다.',
-    `희망 공간: ${reservation.room}`,
+    `신청자: ${reservation.name}`,
+    `학번: ${reservation.student_id || '-'}`,
+    `건물 / 호실: ${reservation.room}`,
     `일시: ${time(reservation.start_at)} ~ ${time(reservation.end_at)}`,
-    `인원: ${reservation.attendees}명`,
-    `접수번호: ${reservation.id}`,
-    '이름과 학번은 카카오톡 나와의 채팅에서 확인해주세요.'
+    `신청 사유: ${reservation.purpose}`,
+    `접수번호: ${reservation.id}`
   ].join('\n');
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000),

@@ -31,12 +31,12 @@ async function bodyOf(request, form = false) {
   try { const b = JSON.parse(input); if (!b || typeof b !== 'object' || Array.isArray(b)) throw 0; return b; }
   catch { throw new InputError('요청 형식을 확인해주세요.'); }
 }
-async function limit(request, env, kind, max) {
-  const now = Date.now(), window = Math.floor(now / 900000);
+async function limit(request, env, kind, max, windowMs = 900000) {
+  const now = Date.now(), window = Math.floor(now / windowMs);
   const ip = request.headers.get('CF-Connecting-IP') || 'local';
   const bucket = await digest(`${env.SESSION_SECRET || 'classroom-reservation'}:${ip}:${kind}:${window}`);
   const row = await env.DB.prepare('INSERT INTO rate_limits(bucket,count,expires_at) VALUES (?,1,?) ON CONFLICT(bucket) DO UPDATE SET count=count+1 RETURNING count')
-    .bind(bucket, (window + 1) * 900000).first();
+    .bind(bucket, (window + 1) * windowMs).first();
   return row.count <= max;
 }
 function adminConfigured(env) { return env.ADMIN_PASSWORD?.length >= 16 && env.SESSION_SECRET?.length >= 32; }
@@ -133,7 +133,13 @@ async function kakaoSetup(request, env, url) {
   }
   if (url.pathname === setupPath && request.method === 'POST') {
     if (request.headers.get('Origin') !== url.origin) return kakaoPage('접근할 수 없습니다.', { status: 403 });
-    if (!await limit(request, env, 'kakao-setup', 8)) return kakaoPage('잠시 후 다시 시도해주세요.', { status: 429 });
+    const setupWindow = 60000;
+    if (!await limit(request, env, 'kakao-setup-minute', 8, setupWindow)) {
+      const retrySeconds = Math.ceil((setupWindow - Date.now() % setupWindow) / 1000);
+      const response = kakaoPage(`설정 코드 확인 횟수를 초과했습니다. ${retrySeconds}초 후 다시 시도해주세요.`, { status: 429 });
+      response.headers.set('Retry-After', String(retrySeconds));
+      return response;
+    }
     const form = await bodyOf(request, true);
     if (!await safeEqual(form.setup_code, env.KAKAO_SETUP_CODE)) return kakaoPage('설정 코드를 확인해주세요.', { form: true, status: 401 });
     const state = crypto.randomUUID();

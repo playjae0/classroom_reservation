@@ -101,6 +101,7 @@ const stateCookie = '__Host-cr_kakao_state';
 function kakaoPage(message, { form = false, status = 200 } = {}) {
   return new Response(`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>카카오 계정 연결</title><h1>카카오 계정 연결</h1><p>${message}</p>${form ? '<form method="post" action="/api/kakao/connect"><label>설정 코드 <input type="password" name="setup_code" required maxlength="256" autocomplete="off"></label> <button>카카오 로그인</button></form>' : '<p><a href="/api/kakao/connect">연결 화면으로</a></p>'}</html>`, {
     status, headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8',
+      'Referrer-Policy': form ? 'same-origin' : 'no-referrer',
       'Content-Security-Policy': "default-src 'none'; form-action 'self' https://kauth.kakao.com; frame-ancestors 'none'; base-uri 'none'" }
   });
 }
@@ -111,7 +112,7 @@ function redirectTo(location, cookie) {
   return new Response(null, { status: 303, headers: { ...headers, Location: location, 'Set-Cookie': cookie } });
 }
 async function kakaoSetup(request, env, url) {
-  if (!env.KAKAO_REST_API_KEY || !env.KAKAO_CLIENT_SECRET || env.KAKAO_SETUP_CODE?.length < 16 || !env.KAKAO_SETUP_CODE) {
+  if (!env.KAKAO_REST_API_KEY || !env.KAKAO_CLIENT_SECRET || !(env.KAKAO_SETUP_CODE?.length >= 8)) {
     return kakaoPage('Cloudflare에 카카오 키와 설정 코드를 저장해주세요.', { status: 503 });
   }
   if (url.origin !== env.PUBLIC_APP_URL) return kakaoPage('운영 주소에서 연결해주세요.', { status: 403 });

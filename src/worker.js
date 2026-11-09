@@ -1,16 +1,17 @@
 import { InputError, validateReservation, validateUpdate } from './domain.js';
 import { createSession, validSession, getCookie, safeEqual, digest } from './security.js';
-import { kakaoConfigured, accessToken, sendToSelf } from './kakao.js';
+import { kakaoConfigured, accessToken, sendToSelf, connectKakao, seal, unseal } from './kakao.js';
 
-function notificationConfigured(env) { return kakaoConfigured(env) || !!(env.NOTIFICATION_WEBHOOK_URL && env.NOTIFICATION_WEBHOOK_TOKEN); }
+async function notificationConfigured(env) { return await kakaoConfigured(env) || !!(env.NOTIFICATION_WEBHOOK_URL && env.NOTIFICATION_WEBHOOK_TOKEN); }
 
 const headers = {
   'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer'
 };
 function json(data, status = 200, extra = {}) { return new Response(JSON.stringify(data), { status, headers: { ...headers, ...extra } }); }
-async function bodyOf(request) {
-  if (!request.headers.get('Content-Type')?.startsWith('application/json')) throw new InputError('JSON 요청만 허용합니다.');
+async function bodyOf(request, form = false) {
+  const contentType = form ? 'application/x-www-form-urlencoded' : 'application/json';
+  if (!request.headers.get('Content-Type')?.startsWith(contentType)) throw new InputError('요청 형식을 확인해주세요.');
   if (Number(request.headers.get('Content-Length')) > 8192) throw new InputError('요청이 너무 큽니다.');
   // Bound streamed bodies as well as Content-Length.
   const reader = request.body?.getReader();
@@ -25,7 +26,9 @@ async function bodyOf(request) {
   }
   const bytes = new Uint8Array(size); let offset = 0;
   for (const c of chunks) { bytes.set(c, offset); offset += c.length; }
-  try { const b = JSON.parse(new TextDecoder().decode(bytes)); if (!b || typeof b !== 'object' || Array.isArray(b)) throw 0; return b; }
+  const input = new TextDecoder().decode(bytes);
+  if (form) return Object.fromEntries(new URLSearchParams(input));
+  try { const b = JSON.parse(input); if (!b || typeof b !== 'object' || Array.isArray(b)) throw 0; return b; }
   catch { throw new InputError('요청 형식을 확인해주세요.'); }
 }
 async function limit(request, env, kind, max) {
@@ -40,6 +43,7 @@ function adminConfigured(env) { return env.ADMIN_PASSWORD?.length >= 16 && env.S
 async function api(request, env, ctx) {
   if (!env.DB) return json({ error: '운영 설정이 준비되지 않았습니다.' }, 503);
   const url = new URL(request.url), path = url.pathname;
+  if (path === '/api/kakao/connect' || path === '/api/kakao/callback') return kakaoSetup(request, env, url);
   const publicSubmission = path === '/api/reservations' && request.method === 'POST';
   if (!publicSubmission && !adminConfigured(env)) return json({ error: '관리자 설정이 준비되지 않았습니다.' }, 503);
   if (!['GET', 'POST', 'PATCH'].includes(request.method)) return json({ error: '허용하지 않는 요청입니다.' }, 405);
@@ -74,7 +78,7 @@ async function api(request, env, ctx) {
     const page = Math.max(0, Math.min(10000, Number.parseInt(url.searchParams.get('page') || '0', 10) || 0));
     const rows = await env.DB.prepare(`SELECT r.*,j.state AS notification_state,j.attempts AS notification_attempts FROM reservations r
       LEFT JOIN notification_jobs j ON j.reservation_id=r.id ORDER BY r.created_at DESC,r.id DESC LIMIT 51 OFFSET ?`).bind(page * 50).all();
-    return json({ reservations: rows.results.slice(0,50), has_more: rows.results.length > 50, page, notification_configured: notificationConfigured(env), notification_provider: kakaoConfigured(env) ? 'kakao_self' : 'relay' });
+    return json({ reservations: rows.results.slice(0,50), has_more: rows.results.length > 50, page, notification_configured: await notificationConfigured(env), notification_provider: await kakaoConfigured(env) ? 'kakao_self' : 'relay' });
   }
   const match = path.match(/^\/api\/admin\/reservations\/([a-f0-9-]{36})$/i);
   if (match && request.method === 'PATCH') {
@@ -84,15 +88,71 @@ async function api(request, env, ctx) {
     return changed ? json({ ok: true }) : json({ error: '다른 담당자가 수정했거나 삭제된 요청입니다. 목록을 새로고침해주세요.' }, 409);
   }
   if (path === '/api/admin/retry' && request.method === 'POST') {
-    if (!notificationConfigured(env)) return json({ error: '알림 발송 경로가 아직 연결되지 않았습니다.' }, 409);
+    if (!await notificationConfigured(env)) return json({ error: '알림 발송 경로가 아직 연결되지 않았습니다.' }, 409);
     await env.DB.prepare("UPDATE notification_jobs SET state='pending', attempts=0, next_at=0 WHERE state='failed'").run();
     ctx.waitUntil(deliverNotifications(env)); return json({ ok: true });
   }
   return json({ error: '찾을 수 없습니다.' }, 404);
 }
+
+const setupPath = '/api/kakao/connect';
+const callbackPath = '/api/kakao/callback';
+const stateCookie = '__Host-cr_kakao_state';
+function kakaoPage(message, { form = false, status = 200 } = {}) {
+  return new Response(`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>카카오 계정 연결</title><h1>카카오 계정 연결</h1><p>${message}</p>${form ? '<form method="post" action="/api/kakao/connect"><label>설정 코드 <input type="password" name="setup_code" required maxlength="256" autocomplete="off"></label> <button>카카오 로그인</button></form>' : '<p><a href="/api/kakao/connect">연결 화면으로</a></p>'}</html>`, {
+    status, headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8',
+      'Content-Security-Policy': "default-src 'none'; form-action 'self' https://kauth.kakao.com; frame-ancestors 'none'; base-uri 'none'" }
+  });
+}
+function stateHeader(value, age) {
+  return `${stateCookie}=${value}; Max-Age=${age}; HttpOnly; Secure; SameSite=Lax; Path=/`;
+}
+function redirectTo(location, cookie) {
+  return new Response(null, { status: 303, headers: { ...headers, Location: location, 'Set-Cookie': cookie } });
+}
+async function kakaoSetup(request, env, url) {
+  if (!env.KAKAO_REST_API_KEY || !env.KAKAO_CLIENT_SECRET || env.KAKAO_SETUP_CODE?.length < 16 || !env.KAKAO_SETUP_CODE) {
+    return kakaoPage('Cloudflare에 카카오 키와 설정 코드를 저장해주세요.', { status: 503 });
+  }
+  if (url.origin !== env.PUBLIC_APP_URL) return kakaoPage('운영 주소에서 연결해주세요.', { status: 403 });
+  const stateKey = 'kakao-state-v1:' + env.KAKAO_SETUP_CODE + ':' + env.KAKAO_CLIENT_SECRET;
+  const redirectUri = url.origin + callbackPath;
+  if (url.pathname === setupPath && request.method === 'GET') {
+    if (url.searchParams.get('result') === 'connected') return kakaoPage('카카오 계정 연결 완료. 새 테스트 신청으로 나와의 채팅을 확인해주세요.');
+    if (url.searchParams.get('result') === 'failed') return kakaoPage('카카오 연결에 실패했습니다. 로그인 설정과 동의를 확인하고 다시 시도해주세요.');
+    return kakaoPage('설정 코드를 입력하고, 신청 메시지를 받을 본인 카카오 계정으로 로그인해주세요.', { form: true });
+  }
+  if (url.pathname === setupPath && request.method === 'POST') {
+    if (request.headers.get('Origin') !== url.origin) return kakaoPage('접근할 수 없습니다.', { status: 403 });
+    if (!await limit(request, env, 'kakao-setup', 8)) return kakaoPage('잠시 후 다시 시도해주세요.', { status: 429 });
+    const form = await bodyOf(request, true);
+    if (!await safeEqual(form.setup_code, env.KAKAO_SETUP_CODE)) return kakaoPage('설정 코드를 확인해주세요.', { form: true, status: 401 });
+    const state = crypto.randomUUID();
+    const cookie = await seal({ state, expires: Date.now() + 600000 }, stateKey);
+    const authorize = new URL('https://kauth.kakao.com/oauth/authorize');
+    authorize.search = new URLSearchParams({ client_id: env.KAKAO_REST_API_KEY, redirect_uri: redirectUri,
+      response_type: 'code', scope: 'talk_message', state, prompt: 'login' }).toString();
+    return redirectTo(authorize.href, stateHeader(cookie, 600));
+  }
+  if (url.pathname === callbackPath && request.method === 'GET') {
+    try {
+      const raw = request.headers.get('Cookie')?.split(';').map(value => value.trim())
+        .find(value => value.startsWith(stateCookie + '='))?.slice(stateCookie.length + 1);
+      const saved = raw && await unseal(raw, stateKey);
+      const code = url.searchParams.get('code');
+      if (!saved || saved.expires <= Date.now() || !code || !await safeEqual(saved.state, url.searchParams.get('state'))) throw new Error('Invalid OAuth state');
+      await connectKakao(env, code, redirectUri);
+      return redirectTo(setupPath + '?result=connected', stateHeader('', 0));
+    } catch {
+      return redirectTo(setupPath + '?result=failed', stateHeader('', 0));
+    }
+  }
+  return kakaoPage('허용하지 않는 요청입니다.', { status: 405 });
+}
+
 export async function deliverNotifications(env) {
-  if (!notificationConfigured(env)) return;
-  const kakao = kakaoConfigured(env);
+  const kakao = await kakaoConfigured(env);
+  if (!kakao && !(env.NOTIFICATION_WEBHOOK_URL && env.NOTIFICATION_WEBHOOK_TOKEN)) return;
   const target = kakao ? null : new URL(env.NOTIFICATION_WEBHOOK_URL);
   if (target && target.protocol !== 'https:') return;
   const now = Date.now();

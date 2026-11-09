@@ -75,3 +75,39 @@ test('실제 SQL: 접수 → 중복 방지 → 관리자 변경 → 충돌 → �
   assert.equal((await DB.prepare('SELECT count(*) AS n FROM notification_jobs').first()).n, 0);
   DB.close();
 });
+
+test('설정 코드와 같은 브라우저의 OAuth 상태가 있어야 카카오 계정을 연결한다', async () => {
+  const DB = database(), origin = 'https://example.com';
+  const env = { DB, PUBLIC_APP_URL: origin, KAKAO_REST_API_KEY: 'test-key',
+    KAKAO_CLIENT_SECRET: 'test-client-secret', KAKAO_SETUP_CODE: 'test-setup-secret' };
+  const call = (path, options) => worker.fetch(new Request(origin + path, options), env, {});
+  const start = code => call('/api/kakao/connect', { method: 'POST',
+    headers: { Origin: origin }, body: new URLSearchParams({ setup_code: code }) });
+  const originalFetch = globalThis.fetch;
+  let exchanges = 0;
+  try {
+    assert.equal((await start('wrong')).status, 401);
+    const response = await start(env.KAKAO_SETUP_CODE);
+    assert.equal(response.status, 303);
+    const authorize = new URL(response.headers.get('Location'));
+    assert.equal(authorize.origin, 'https://kauth.kakao.com');
+    assert.equal(authorize.searchParams.get('scope'), 'talk_message');
+    const cookie = response.headers.get('Set-Cookie').split(';')[0];
+    const callback = '/api/kakao/callback?code=test-code&state=' + authorize.searchParams.get('state');
+    globalThis.fetch = async (url, options) => {
+      exchanges++;
+      assert.equal(url, 'https://kauth.kakao.com/oauth/token');
+      assert.equal(options.body.get('redirect_uri'), origin + '/api/kakao/callback');
+      assert.equal(options.body.get('client_secret'), env.KAKAO_CLIENT_SECRET);
+      return Response.json({ access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600, scope: 'talk_message' });
+    };
+    assert.match((await call(callback)).headers.get('Location'), /failed/);
+    assert.equal(exchanges, 0);
+    const completed = await call(callback, { headers: { Cookie: cookie } });
+    assert.match(completed.headers.get('Location'), /connected/);
+    assert.equal(exchanges, 1);
+    const stored = await DB.prepare("SELECT encrypted_value FROM integration_tokens WHERE provider='kakao'").first();
+    assert.ok(stored.encrypted_value);
+    assert.equal(stored.encrypted_value.includes('test-refresh'), false);
+  } finally { globalThis.fetch = originalFetch; DB.close(); }
+});

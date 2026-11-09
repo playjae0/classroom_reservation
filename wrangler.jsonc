@@ -11,6 +11,6 @@
     "migrations_dir": "migrations"
   }],
   "triggers": { "crons": ["*/5 * * * *"] },
-  "vars": { "APP_NAME": "원우 강의실 예약", "RETENTION_DAYS": "90" },
+  "vars": { "APP_NAME": "원우 강의실 예약", "RETENTION_DAYS": "90", "PUBLIC_APP_URL": "https://classroom-reservation.motfriends.workers.dev" },
   "observability": { "enabled": false }
 }

@@ -1,6 +1,12 @@
 const encoder = new TextEncoder();
-export function kakaoConfigured(env) {
-  return !!(env.KAKAO_REST_API_KEY && env.KAKAO_REFRESH_TOKEN && env.TOKEN_ENCRYPTION_KEY?.length >= 32 && env.PUBLIC_APP_URL);
+function tokenKey(env) {
+  if (env.TOKEN_ENCRYPTION_KEY?.length >= 32) return env.TOKEN_ENCRYPTION_KEY;
+  return env.KAKAO_CLIENT_SECRET ? 'kakao-token-v1:' + env.KAKAO_CLIENT_SECRET : null;
+}
+export async function kakaoConfigured(env) {
+  if (!env.KAKAO_REST_API_KEY || !tokenKey(env) || !env.PUBLIC_APP_URL) return false;
+  if (env.KAKAO_REFRESH_TOKEN) return true;
+  return !!await env.DB.prepare("SELECT 1 FROM integration_tokens WHERE provider='kakao'").first();
 }
 async function encryptionKey(secret) {
   const hash = await crypto.subtle.digest('SHA-256', encoder.encode(secret));
@@ -21,16 +27,17 @@ export async function unseal(value, secret) {
 async function saveToken(env, token) {
   await env.DB.prepare(`INSERT INTO integration_tokens(provider,encrypted_value,updated_at) VALUES('kakao',?,?)
     ON CONFLICT(provider) DO UPDATE SET encrypted_value=excluded.encrypted_value,updated_at=excluded.updated_at`)
-    .bind(await seal(token, env.TOKEN_ENCRYPTION_KEY), new Date().toISOString()).run();
+    .bind(await seal(token, tokenKey(env)), new Date().toISOString()).run();
 }
 async function refreshOrCachedToken(env) {
   const row = await env.DB.prepare("SELECT encrypted_value FROM integration_tokens WHERE provider='kakao'").first();
-  let saved = row ? await unseal(row.encrypted_value, env.TOKEN_ENCRYPTION_KEY) : null;
+  let saved = row ? await unseal(row.encrypted_value, tokenKey(env)) : null;
   // Changing the bootstrap refresh secret deliberately resets the connection.
-  const bootstrap = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(env.KAKAO_REFRESH_TOKEN))));
-  if (saved?.bootstrap !== bootstrap) saved = null;
+  const bootstrap = env.KAKAO_REFRESH_TOKEN ? encode(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(env.KAKAO_REFRESH_TOKEN)))) : null;
+  if (saved && !saved.connected && saved.bootstrap !== bootstrap) saved = null;
   if (saved?.expires_at > Date.now() + 60000) return saved.access_token;
   const refresh = saved?.refresh_token || env.KAKAO_REFRESH_TOKEN;
+  if (!refresh) throw new Error('카카오 계정을 연결해주세요.');
   const body = new URLSearchParams({ grant_type: 'refresh_token', client_id: env.KAKAO_REST_API_KEY, refresh_token: refresh });
   if (env.KAKAO_CLIENT_SECRET) body.set('client_secret', env.KAKAO_CLIENT_SECRET);
   const response = await fetch('https://kauth.kakao.com/oauth/token', { method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(10000) });
@@ -38,17 +45,36 @@ async function refreshOrCachedToken(env) {
   const token = await response.json();
   if (!token.access_token || !Number.isFinite(token.expires_in)) throw new Error('카카오 인증 응답 오류');
   await saveToken(env, { access_token: token.access_token, refresh_token: token.refresh_token || refresh,
-    expires_at: Date.now() + token.expires_in * 1000, bootstrap });
+    expires_at: Date.now() + token.expires_in * 1000, bootstrap, connected: saved?.connected === true });
   return token.access_token;
 }
-export async function accessToken(env) {
+async function withTokenLock(env, action) {
   const owner = crypto.randomUUID(), now = Date.now();
   const lock = await env.DB.prepare(`INSERT INTO integration_locks(provider,owner,expires_at) VALUES('kakao',?,?)
     ON CONFLICT(provider) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at
     WHERE integration_locks.expires_at<? RETURNING owner`).bind(owner,now+30000,now).first();
   if (!lock) throw new Error('카카오 연결 갱신 중입니다.');
-  try { return await refreshOrCachedToken(env); }
+  try { return await action(); }
   finally { await env.DB.prepare("DELETE FROM integration_locks WHERE provider='kakao' AND owner=?").bind(owner).run(); }
+}
+export function accessToken(env) {
+  return withTokenLock(env, () => refreshOrCachedToken(env));
+}
+export async function connectKakao(env, code, redirectUri) {
+  const body = new URLSearchParams({ grant_type: 'authorization_code', client_id: env.KAKAO_REST_API_KEY,
+    redirect_uri: redirectUri, code });
+  if (env.KAKAO_CLIENT_SECRET) body.set('client_secret', env.KAKAO_CLIENT_SECRET);
+  await withTokenLock(env, async () => {
+    const response = await fetch('https://kauth.kakao.com/oauth/token', {
+      method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) throw new Error('카카오 토큰 발급 실패');
+    const token = await response.json();
+    if (!token.access_token || !token.refresh_token || !Number.isFinite(token.expires_in) ||
+        (token.scope && !token.scope.split(/\s+/).includes('talk_message'))) throw new Error('카카오 메시지 권한이 필요합니다.');
+    await saveToken(env, { access_token: token.access_token, refresh_token: token.refresh_token,
+      expires_at: Date.now() + token.expires_in * 1000, connected: true });
+  });
 }
 export function selfMessage(reservation, appUrl) {
   const url = new URL(appUrl);
@@ -78,7 +104,7 @@ export async function sendToSelf(env, reservation, token) {
     // Expired/revoked access token: refresh on next queued attempt.
     const row = await env.DB.prepare("SELECT encrypted_value FROM integration_tokens WHERE provider='kakao'").first();
     if (row) {
-      const saved = await unseal(row.encrypted_value, env.TOKEN_ENCRYPTION_KEY);
+      const saved = await unseal(row.encrypted_value, tokenKey(env));
       saved.expires_at = 0;
       await saveToken(env, saved);
     }

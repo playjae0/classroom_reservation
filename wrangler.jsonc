@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "classroom-reservation",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-07",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "classroom-reservation",
+    "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+    "migrations_dir": "migrations"
+  }],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": { "APP_NAME": "원우 강의실 예약", "RETENTION_DAYS": "90" },
+  "observability": { "enabled": false }
+}

@@ -118,6 +118,10 @@ async function kakaoSetup(request, env, url) {
     return kakaoPage('Cloudflare에 카카오 키와 설정 코드를 저장해주세요.', { status: 503 });
   }
   if (url.origin !== env.PUBLIC_APP_URL) return kakaoPage('운영 주소에서 연결해주세요.', { status: 403 });
+  if (url.pathname === setupPath) {
+    const tables = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('integration_tokens','integration_locks')").all();
+    if (tables.results.length !== 2) return kakaoPage('D1에 카카오 연결 테이블이 없습니다. 0002_kakao_tokens.sql을 적용한 뒤 새로고침해주세요.', { status: 503 });
+  }
   const stateKey = 'kakao-state-v1:' + env.KAKAO_SETUP_CODE + ':' + env.KAKAO_CLIENT_SECRET;
   const redirectUri = url.origin + callbackPath;
   if (url.pathname === setupPath && request.method === 'GET') {
@@ -126,7 +130,12 @@ async function kakaoSetup(request, env, url) {
       const reason = url.searchParams.get('reason');
       if (reason === 'state') return kakaoPage('로그인 세션을 확인할 수 없습니다. 같은 Chrome 탭에서 설정 코드 확인부터 다시 진행해주세요.');
       if (reason === 'consent') return kakaoPage('카카오가 로그인 또는 메시지 전송 동의를 완료하지 않았습니다. 동의 화면에서 카카오톡 메시지 전송을 선택해주세요.');
-      if (reason === 'token') return kakaoPage('카카오 토큰 발급 또는 저장 단계에서 연결에 실패했습니다. REST API 키와 같은 키의 클라이언트 시크릿을 확인해주세요.');
+      if (reason === 'storage') return kakaoPage('Cloudflare D1에 카카오 토큰을 저장하지 못했습니다.');
+      if (reason === 'token') {
+        const code = url.searchParams.get('code');
+        const detail = code && /^KOE[0-9]{3}$/.test(code) ? ' 오류 코드: ' + code + '.' : '';
+        return kakaoPage('카카오 토큰 발급에 실패했습니다.' + detail);
+      }
       return kakaoPage('카카오 연결에 실패했습니다. 연결 화면에서 다시 시도해주세요.');
     }
     return kakaoPage('설정 코드를 입력하고, 신청 메시지를 받을 본인 카카오 계정으로 로그인해주세요.', { form: true });
@@ -164,8 +173,10 @@ async function kakaoSetup(request, env, url) {
       reason = 'token';
       await connectKakao(env, code, redirectUri);
       return redirectTo(setupPath + '?result=connected', stateHeader('', 0));
-    } catch {
-      return redirectTo(setupPath + '?result=failed&reason=' + reason, stateHeader('', 0));
+    } catch (error) {
+      const stage = reason === 'token' && error.kakaoStage === 'storage' ? 'storage' : reason;
+      const detail = /^KOE[0-9]{3}$/.test(error.kakaoCode || '') ? '&code=' + error.kakaoCode : '';
+      return redirectTo(setupPath + '?result=failed&reason=' + stage + detail, stateHeader('', 0));
     }
   }
   return kakaoPage('허용하지 않는 요청입니다.', { status: 405 });

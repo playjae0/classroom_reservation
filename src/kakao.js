@@ -64,17 +64,27 @@ export async function connectKakao(env, code, redirectUri) {
   const body = new URLSearchParams({ grant_type: 'authorization_code', client_id: env.KAKAO_REST_API_KEY,
     redirect_uri: redirectUri, code });
   if (env.KAKAO_CLIENT_SECRET) body.set('client_secret', env.KAKAO_CLIENT_SECRET);
-  await withTokenLock(env, async () => {
+  let stage = 'storage';
+  try { await withTokenLock(env, async () => {
+    stage = 'token';
     const response = await fetch('https://kauth.kakao.com/oauth/token', {
       method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(10000)
     });
-    if (!response.ok) throw new Error('카카오 토큰 발급 실패');
     const token = await response.json();
+    if (!response.ok) {
+      const error = new Error('카카오 토큰 발급 실패');
+      error.kakaoCode = token.error_code;
+      throw error;
+    }
     if (!token.access_token || !token.refresh_token || !Number.isFinite(token.expires_in) ||
         (token.scope && !token.scope.split(/\s+/).includes('talk_message'))) throw new Error('카카오 메시지 권한이 필요합니다.');
+    stage = 'storage';
     await saveToken(env, { access_token: token.access_token, refresh_token: token.refresh_token,
       expires_at: Date.now() + token.expires_in * 1000, connected: true });
-  });
+  }); } catch (error) {
+    error.kakaoStage = stage;
+    throw error;
+  }
 }
 export function selfMessage(reservation, appUrl) {
   const url = new URL(appUrl);

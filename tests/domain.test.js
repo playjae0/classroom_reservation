@@ -4,11 +4,11 @@ import { validateReservation, validateUpdate } from '../src/domain.js';
 import { createSession, validSession } from '../src/security.js';
 import worker from '../src/worker.js';
 const now = Date.parse('2026-11-07T00:00:00Z');
-const valid = { name: '테스트', student_id: '20260001', room: '회의실', purpose: '팀 회의', attendees: 5,
+const valid = { name: '테스트', student_id: '20260001', email: 'student@example.com', room: '회의실', purpose: '팀 회의', attendees: 5,
   start_at: '2026-11-08T10:00:00+09:00', end_at: '2026-11-08T12:00:00+09:00', consent: true };
 test('한국 시간 입력을 UTC로 저장한다', () => assert.equal(validateReservation(valid, now).start_at, '2026-11-08T01:00:00.000Z'));
 test('역전 시간, 과거, 초과 인원, 미동의, 과도한 길이를 거절한다', () => {
-  for (const patch of [{ end_at: valid.start_at }, { start_at: '2020-01-01' }, { attendees: 0 }, { consent: false }, { purpose: 'x'.repeat(501) }, { website: 'spam' }]) {
+  for (const patch of [{ end_at: valid.start_at }, { start_at: '2020-01-01' }, { attendees: 0 }, { email: 'invalid' }, { consent: false }, { purpose: 'x'.repeat(501) }, { website: 'spam' }]) {
     assert.throws(() => validateReservation({ ...valid, ...patch }, now));
   }
 });

@@ -10,6 +10,7 @@ export async function sendReservationEmail(env, reservation, jobId) {
     '강의실 예약 요청이 접수되었습니다.',
     `신청자: ${reservation.name}`,
     `학번: ${reservation.student_id || '-'}`,
+    `결과 안내 이메일: ${reservation.contact || '-'}`,
     `건물 / 호실: ${reservation.room}`,
     `일시: ${time(reservation.start_at)} ~ ${time(reservation.end_at)}`,
     `신청 사유: ${reservation.purpose}`,

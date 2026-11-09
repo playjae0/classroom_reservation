@@ -33,7 +33,7 @@ test('실제 SQL: 접수 → 중복 방지 → 관리자 변경 → 충돌 → �
       headers: { Origin: 'https://example.com', 'Content-Type': 'application/json', ...extra },
       body: data ? JSON.stringify(data) : undefined }), env, ctx);
   }
-  const draft = { name: '가상 원우', student_id: '20260001', building: '가상 건물', room_number: '201호', purpose: '테스트',
+  const draft = { name: '가상 원우', student_id: '20260001', email: 'student@example.com', building: '가상 건물', room_number: '201호', purpose: '테스트',
     consent: true, start_at: new Date(Date.now()+86400000).toISOString(), end_at: new Date(Date.now()+90000000).toISOString() };
   const key = crypto.randomUUID();
   const submitted = await call('reservations', 'POST', draft, { 'Idempotency-Key': key });
@@ -81,6 +81,7 @@ test('실제 SQL: 접수 → 중복 방지 → 관리자 변경 → 충돌 → �
       assert.match(options.headers['Idempotency-Key'], /^email:/);
       assert.ok(email.text.includes(draft.name));
       assert.ok(email.text.includes(draft.student_id));
+      assert.ok(email.text.includes(draft.email));
       assert.ok(email.text.includes(draft.building + ' / ' + draft.room_number));
       assert.ok(email.text.includes(draft.purpose));
       return Response.json({ id: 'email-test' });

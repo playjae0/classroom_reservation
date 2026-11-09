@@ -7,7 +7,10 @@ function text(value, label, max, optional = false) {
   return value.trim();
 }
 export function validateReservation(body, now = Date.now()) {
+  const email = text(body.email, '이메일', 100);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new InputError('결과 안내 이메일을 확인해주세요.');
   const result = {
+    email,
     name: text(body.name, '이름', 40),
     student_id: text(body.student_id, '학번', 20),
     room: body.building !== undefined || body.room_number !== undefined

@@ -69,7 +69,7 @@ async function api(request, env, ctx) {
     if (emailConfigured(env)) jobs.push(env.DB.prepare("INSERT INTO notification_jobs(id,reservation_id) SELECT 'email:' || id,id FROM reservations WHERE idempotency_key=? ON CONFLICT(id) DO NOTHING").bind(key));
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO reservations(id,idempotency_key,name,student_id,contact,cohort,room,start_at,end_at,attendees,purpose,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING`).bind(id,key,data.name,data.student_id,'','',data.room,data.start_at,data.end_at,data.attendees,data.purpose,now,now),
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING`).bind(id,key,data.name,data.student_id,data.email,'',data.room,data.start_at,data.end_at,data.attendees,data.purpose,now,now),
       ...jobs
     ]);
     const saved = await env.DB.prepare('SELECT id FROM reservations WHERE idempotency_key=?').bind(key).first();
@@ -207,7 +207,7 @@ export async function deliverNotifications(env) {
     if (!claimed) continue;
     try {
       const emailJob = job.id.startsWith('email:');
-      const reservation = await env.DB.prepare((kakao || emailJob) ? 'SELECT id,name,student_id,room,start_at,end_at,attendees,purpose FROM reservations WHERE id=?' : 'SELECT id,room,start_at,end_at,attendees FROM reservations WHERE id=?').bind(job.reservation_id).first();
+      const reservation = await env.DB.prepare((kakao || emailJob) ? 'SELECT id,name,student_id,contact,room,start_at,end_at,attendees,purpose FROM reservations WHERE id=?' : 'SELECT id,room,start_at,end_at,attendees FROM reservations WHERE id=?').bind(job.reservation_id).first();
       if (emailJob) {
         await sendReservationEmail(env, reservation, job.id);
       } else if (kakao) {

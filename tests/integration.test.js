@@ -88,8 +88,9 @@ test('설정 코드와 같은 브라우저의 OAuth 상태가 있어야 카카�
   try {
     assert.equal((await start('wrong')).status, 401);
     const response = await start(env.KAKAO_SETUP_CODE);
-    assert.equal(response.status, 303);
-    const authorize = new URL(response.headers.get('Location'));
+    assert.equal(response.status, 200);
+    const link = (await response.text()).match(/href="(https:\/\/kauth\.kakao\.com\/oauth\/authorize[^\"]+)"/);
+    const authorize = new URL(link[1].replaceAll('&amp;', '&'));
     assert.equal(authorize.origin, 'https://kauth.kakao.com');
     assert.equal(authorize.searchParams.get('scope'), 'talk_message');
     const cookie = response.headers.get('Set-Cookie').split(';')[0];

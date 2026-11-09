@@ -98,9 +98,11 @@ async function api(request, env, ctx) {
 const setupPath = '/api/kakao/connect';
 const callbackPath = '/api/kakao/callback';
 const stateCookie = '__Host-cr_kakao_state';
-function kakaoPage(message, { form = false, status = 200 } = {}) {
-  return new Response(`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>카카오 계정 연결</title><h1>카카오 계정 연결</h1><p>${message}</p>${form ? '<form method="post" action="/api/kakao/connect"><label>설정 코드 <input type="password" name="setup_code" required maxlength="256" autocomplete="off"></label> <button>카카오 로그인</button></form>' : '<p><a href="/api/kakao/connect">연결 화면으로</a></p>'}</html>`, {
+function kakaoPage(message, { form = false, status = 200, authorize, cookie } = {}) {
+  const loginLink = authorize ? `<p><a href="${authorize.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">카카오 로그인으로 이동</a></p>` : '';
+  return new Response(`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>카카오 계정 연결</title><h1>카카오 계정 연결</h1><p>${message}</p>${loginLink}${form ? '<form method="post" action="/api/kakao/connect"><label>설정 코드 <input type="password" name="setup_code" required maxlength="256" autocomplete="off"></label> <button>설정 코드 확인</button></form>' : '<p><a href="/api/kakao/connect">연결 화면으로</a></p>'}</html>`, {
     status, headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8',
+      ...(cookie ? { 'Set-Cookie': cookie } : {}),
       'Referrer-Policy': form ? 'same-origin' : 'no-referrer',
       'Content-Security-Policy': "default-src 'none'; form-action 'self' https://kauth.kakao.com; frame-ancestors 'none'; base-uri 'none'" }
   });
@@ -133,7 +135,9 @@ async function kakaoSetup(request, env, url) {
     const authorize = new URL('https://kauth.kakao.com/oauth/authorize');
     authorize.search = new URLSearchParams({ client_id: env.KAKAO_REST_API_KEY, redirect_uri: redirectUri,
       response_type: 'code', scope: 'talk_message', state, prompt: 'login' }).toString();
-    return redirectTo(authorize.href, stateHeader(cookie, 600));
+    return kakaoPage('설정 코드가 확인됐습니다. 아래 링크를 눌러 카카오 계정으로 로그인해주세요.', {
+      authorize: authorize.href, cookie: stateHeader(cookie, 600)
+    });
   }
   if (url.pathname === callbackPath && request.method === 'GET') {
     try {

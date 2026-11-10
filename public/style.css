@@ -13,3 +13,8 @@ body{border-top:5px solid #8b1538}
 input:focus,textarea:focus{outline-color:#8b1538}
 label small{display:block;margin-top:5px;color:var(--muted);font-size:12px;font-weight:400}
 @media(max-width:480px){.brand{gap:7px}.brand img{width:36px;height:36px}.brand strong{font-size:12px}.brand small{font-size:11px}}
+
+.council-footer { padding: 36px 20px; border-top: 1px solid #e9dde1; text-align: center; }
+.council-footer-motto { margin: 0 0 8px; color: #8b1538; font-size: 17px; font-weight: 800; letter-spacing: -.03em; }
+.council-footer-credit { margin: 0; color: var(--muted); font-size: 12px; }
+.council-footer-credit strong { color: #8b1538; }

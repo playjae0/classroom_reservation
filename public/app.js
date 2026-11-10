@@ -13,21 +13,49 @@ function formatDate(value) { return new Intl.DateTimeFormat('ko-KR', { timeZone:
 const requestForm = $('request-form');
 const buildingSelect = requestForm.elements.building;
 const customBuilding = requestForm.elements.custom_building;
-function updateBuildingInput() {
-  const enabled = buildingSelect.value === 'custom';
-  $('custom-building-label').classList.toggle('hidden', !enabled);
-  customBuilding.disabled = !enabled;
-  customBuilding.required = enabled;
+const roomSelect = requestForm.elements.room_choice;
+const customRoom = requestForm.elements.room_number;
+const roomsByBuilding = new Map([
+  ['창의관', ['106호', '127호']],
+  ['신공학관', ['B101호', 'B103호', 'B105호', 'B106호', 'B107B호', 'B108호', 'B114호', 'B115호']]
+]);
+
+function updateRoomInput() {
+  const enabled = buildingSelect.value === 'custom' || roomSelect.value === 'custom';
+  $('custom-room-label').classList.toggle('hidden', !enabled);
+  customRoom.disabled = !enabled;
+  customRoom.required = enabled;
 }
+
+function updateBuildingInput() {
+  const building = buildingSelect.value;
+  const direct = building === 'custom';
+  $('custom-building-label').classList.toggle('hidden', !direct);
+  customBuilding.disabled = !direct;
+  customBuilding.required = direct;
+  $('room-select-label').classList.toggle('hidden', direct);
+  roomSelect.disabled = !building || direct;
+
+  const rooms = roomsByBuilding.get(building) || [];
+  roomSelect.replaceChildren(new Option(building ? '호실 선택' : '건물을 먼저 선택하세요', ''));
+  if (rooms.length) {
+    roomSelect.append(...rooms.map(room => new Option(room, room)), new Option('직접 입력', 'custom'));
+  }
+  customRoom.value = '';
+  updateRoomInput();
+}
+
 buildingSelect.addEventListener('change', updateBuildingInput);
+roomSelect.addEventListener('change', updateRoomInput);
 updateBuildingInput();
 $('request-form').addEventListener('input', () => { if (!submitting) idempotencyKey = crypto.randomUUID(); });
 $('request-form').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget, button = form.querySelector('button[type=submit]');
   const fields = Object.fromEntries(new FormData(form));
-  const { custom_building, ...requestFields } = fields;
+  const { custom_building, room_choice, ...requestFields } = fields;
   const body = { ...requestFields, building: fields.building === 'custom' ? custom_building : fields.building,
+    room_number: fields.building === 'custom' || room_choice === 'custom' ? fields.room_number : room_choice,
     consent: form.elements.consent.checked,
     start_at: `${fields.date}T${fields.start_time}:00+09:00`, end_at: `${fields.date}T${fields.end_time}:00+09:00` };
   submitting = true; button.disabled = true;

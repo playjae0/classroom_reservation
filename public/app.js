@@ -10,19 +10,32 @@ async function api(path, options = {}) {
   return body;
 }
 function formatDate(value) { return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)); }
+const requestForm = $('request-form');
+const buildingSelect = requestForm.elements.building;
+const customBuilding = requestForm.elements.custom_building;
+function updateBuildingInput() {
+  const enabled = buildingSelect.value === 'custom';
+  $('custom-building-label').classList.toggle('hidden', !enabled);
+  customBuilding.disabled = !enabled;
+  customBuilding.required = enabled;
+}
+buildingSelect.addEventListener('change', updateBuildingInput);
+updateBuildingInput();
 $('request-form').addEventListener('input', () => { if (!submitting) idempotencyKey = crypto.randomUUID(); });
 $('request-form').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget, button = form.querySelector('button[type=submit]');
   const fields = Object.fromEntries(new FormData(form));
-  const body = { ...fields, consent: form.elements.consent.checked,
+  const { custom_building, ...requestFields } = fields;
+  const body = { ...requestFields, building: fields.building === 'custom' ? custom_building : fields.building,
+    consent: form.elements.consent.checked,
     start_at: `${fields.date}T${fields.start_time}:00+09:00`, end_at: `${fields.date}T${fields.end_time}:00+09:00` };
   submitting = true; button.disabled = true;
   message('request-message', '접수하고 있습니다…');
   try {
     const result = await api('/api/reservations', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(body) });
     $('receipt-id').textContent = result.id; form.classList.add('hidden'); $('receipt').classList.remove('hidden'); $('receipt').focus();
-    form.reset(); idempotencyKey = crypto.randomUUID(); message('request-message', '');
+    form.reset(); updateBuildingInput(); idempotencyKey = crypto.randomUUID(); message('request-message', '');
   } catch (error) { message('request-message', error.message, true); }
   finally { submitting = false; button.disabled = false; }
 });

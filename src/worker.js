@@ -40,7 +40,7 @@ async function limit(request, env, kind, max, windowMs = 900000) {
     .bind(bucket, (window + 1) * windowMs).first();
   return row.count <= max;
 }
-function adminConfigured(env) { return env.ADMIN_PASSWORD?.length >= 16 && env.SESSION_SECRET?.length >= 32; }
+function adminConfigured(env) { return env.ADMIN_PASSWORD?.length >= 10 && env.SESSION_SECRET?.length >= 32; }
 async function api(request, env, ctx) {
   if (!env.DB) return json({ error: '운영 설정이 준비되지 않았습니다.' }, 503);
   const url = new URL(request.url), path = url.pathname;
